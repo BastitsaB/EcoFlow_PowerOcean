@@ -23,7 +23,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
     """
     Koordiniert Datenaktualisierungen von EcoFlow Cloud und integriert MQTT-Daten sicher.
 
-    - Polling für normale (aktuelle) Daten alle 60 Sekunden
+    - Polling für normale (aktuelle) Daten alle 5 Sekunden
     - Historische Daten nur alle 5 Minuten
     """
 
@@ -32,7 +32,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="EcoFlowDataCoordinator",
-            update_interval=timedelta(seconds=60),  # Polling alle 60 Sekunden
+            update_interval=timedelta(seconds=5),  # Polling alle 5 Sekunden
         )
         self._hass = hass
         self._config_entry = config_entry
@@ -136,7 +136,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
         """Blockierender Aufruf: GET /iot-open/sign/certification für MQTT-Zugangsdaten."""
         endpoint = f"{self.base_url}/iot-open/sign/certification"
         payload = {}
-        headers = self._generate_signature(payload, "GET", "/iot-open/sign/certification")
+        headers = self._generate_signature(payload, "GET", "/iot-open/sign/device/quota/all")
 
         try:
             r = requests.get(endpoint, headers=headers, timeout=10)
@@ -188,9 +188,12 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
         ts = str(int(time.time() * 1000))
 
         flat = self._flatten_dict(payload)
-        sign_base = flat
-        if sign_base:
+        if flat:
+            # Sortiere die Schlüssel und erstelle ein sign_base String
+            sign_base = "&".join(f"{k}={v}" for k, v in sorted(flat.items()))
             sign_base += "&"
+        else:
+            sign_base = ""
         sign_base += f"accessKey={self.access_key}&nonce={nonce}&timestamp={ts}"
 
         signature = hmac.new(
