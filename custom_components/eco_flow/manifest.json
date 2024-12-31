@@ -1,9 +1,8 @@
 {
   "domain": "ecoflow_powerocean",
   "name": "EcoFlow PowerOcean",
-  "version": "1.0.1",
-  "requirements": ["requests"],
-  "dependencies": [],
-  "codeowners": ["BastitsaB"],
-  "config_flow": true
+  "version": "1.0.2",
+  "config_flow": true,
+  "requirements": ["requests", "paho-mqtt"],
+  "codeowners": ["@BastitsaB"]
 }
