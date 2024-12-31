@@ -1,10 +1,10 @@
 """
 coordinator.py – Coordinator for EcoFlow PowerOcean data (REST + MQTT),
-with:
- - Potential 5-second or custom polling for normal "all quotas" data
- - Potential 5-minute or custom interval for historical data
- - Automatic fetch of MQTT certificate
- - Thread-safety fix: we do NOT call async_set_updated_data(...) directly from the MQTT thread
+mit:
+ - 5-Sekunden-Polling für normale "all quotas" Daten
+ - 5-Minuten-Polling für historische Daten
+ - Automatisches Abrufen des MQTT-Zertifikats bei Bedarf
+ - Thread-Safety-Fix: async_set_updated_data wird sicher im HA-Event-Loop ausgeführt
 """
 
 import logging
@@ -15,17 +15,16 @@ import requests
 from datetime import timedelta, datetime
 
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
-from homeassistant.core import HomeAssistant, CALLBACK_TYPE
+from homeassistant.core import HomeAssistant
 
 _LOGGER = logging.getLogger(__name__)
 
 class EcoFlowDataCoordinator(DataUpdateCoordinator):
     """
-    Coordinates data updates from EcoFlow Cloud + merges MQTT updates safely.
+    Koordiniert Datenaktualisierungen von EcoFlow Cloud und integriert MQTT-Daten sicher.
 
-    - You can set update_interval=timedelta(seconds=5) for quick polling (or any interval).
-    - We store normal cloud_data in self.cloud_data, historical in self.historical_data, and MQTT in self.mqtt_data.
-    - Thread-safety fix: actual set_updated_data is scheduled via self.hass.add_job(...) in update_mqtt_data(...).
+    - Polling für normale (aktuelle) Daten alle 60 Sekunden
+    - Historische Daten nur alle 5 Minuten
     """
 
     def __init__(self, hass: HomeAssistant, config_entry):
@@ -33,7 +32,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="EcoFlowDataCoordinator",
-            update_interval=timedelta(seconds=5),  # Beispiel: alle 5 Sekunden
+            update_interval=timedelta(seconds=60),  # Polling alle 60 Sekunden
         )
         self._hass = hass
         self._config_entry = config_entry
@@ -46,28 +45,28 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
 
         self.base_url = "https://api-e.ecoflow.com"
 
-        # Local caches
+        # Lokale Caches
         self.cloud_data = {}
         self.historical_data = {}
         self.mqtt_data = {}
         self.mqtt_cert_data = {}
 
-        # Just an example if you want 5-minute history fetch logic:
+        # Historische Daten-Abfrage-Intervall
         self._last_history_fetch = None
-        self._history_interval_sec = 300  # 5 min
+        self._history_interval_sec = 300  # 5 Minuten
 
     async def _async_update_data(self):
         """
-        Called by DataUpdateCoordinator each update_interval (5s here).
-        Merge normal data + historical (maybe each 5 min) + MQTT.
+        Wird alle 5 Sekunden vom DataUpdateCoordinator aufgerufen.
+        Holt normale Daten und bei Bedarf historische Daten.
         """
         try:
             self.cloud_data = await self._hass.async_add_executor_job(self._fetch_all_quotas)
         except Exception as exc:
-            _LOGGER.error("Error fetching normal quotas: %s", exc)
+            _LOGGER.error("Fehler beim Abrufen der normalen Quotas: %s", exc)
             raise
 
-        # Optional: fetch historical data every 5 min
+        # Historische Daten nur alle 5 Minuten abrufen
         need_history = False
         now = datetime.now()
         if not self._last_history_fetch:
@@ -78,14 +77,14 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
                 need_history = True
 
         if need_history:
+            _LOGGER.debug("Abrufen historischer Daten ...")
             try:
-                _LOGGER.debug("Fetching historical data ...")
                 self.historical_data = await self._hass.async_add_executor_job(self._fetch_historical_data)
             except Exception as exc:
-                _LOGGER.error("Error fetching historical data: %s", exc)
+                _LOGGER.error("Fehler beim Abrufen historischer Daten: %s", exc)
             self._last_history_fetch = now
 
-        # Merge everything
+        # Daten zusammenführen
         combined = {}
         combined.update(self.cloud_data)
         combined["historical_data"] = self.historical_data
@@ -96,7 +95,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
         return combined
 
     def _fetch_all_quotas(self) -> dict:
-        """Blocking call: GET /iot-open/sign/device/quota/all."""
+        """Blockierender Aufruf: GET /iot-open/sign/device/quota/all."""
         endpoint = f"{self.base_url}/iot-open/sign/device/quota/all"
         params = {"sn": self.device_sn}
         headers = self._generate_signature(params, "GET", "/iot-open/sign/device/quota/all")
@@ -105,13 +104,14 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             r = requests.get(endpoint, params=params, headers=headers, timeout=10)
             r.raise_for_status()
             js = r.json()
+            _LOGGER.debug("Abruf aller Quotas: %s", js.get("data", {}))
             return js.get("data", {})
         except Exception as e:
-            _LOGGER.error("Failed to fetch all quotas: %s", e)
+            _LOGGER.error("Fehler beim Abrufen aller Quotas: %s", e)
             return {}
 
     def _fetch_historical_data(self) -> dict:
-        """Blocking call: POST /iot-open/sign/device/quota/data for historical info."""
+        """Blockierender Aufruf: POST /iot-open/sign/device/quota/data für historische Informationen."""
         endpoint = f"{self.base_url}/iot-open/sign/device/quota/data"
         payload = {
             "sn": self.device_sn,
@@ -126,13 +126,14 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             r = requests.post(endpoint, json=payload, headers=headers, timeout=10)
             r.raise_for_status()
             js = r.json()
+            _LOGGER.debug("Abruf historischer Daten: %s", js.get("data", {}))
             return js.get("data", {})
         except Exception as e:
-            _LOGGER.error("Failed to fetch historical data: %s", e)
+            _LOGGER.error("Fehler beim Abrufen historischer Daten: %s", e)
             return {}
 
     def fetch_mqtt_certification(self) -> dict:
-        """Blocking call: GET /iot-open/sign/certification for MQTT credentials."""
+        """Blockierender Aufruf: GET /iot-open/sign/certification für MQTT-Zugangsdaten."""
         endpoint = f"{self.base_url}/iot-open/sign/certification"
         payload = {}
         headers = self._generate_signature(payload, "GET", "/iot-open/sign/certification")
@@ -143,44 +144,46 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             data = r.json()
             if data.get("code") == "0":
                 self.mqtt_cert_data = data.get("data", {})
-                _LOGGER.debug("Fetched MQTT cert data: %s", self.mqtt_cert_data)
+                _LOGGER.debug("MQTT-Zertifikatsdaten abgerufen: %s", self.mqtt_cert_data)
                 return self.mqtt_cert_data
             else:
-                _LOGGER.error("MQTT cert request code %s: %s",
+                _LOGGER.error("MQTT-Zertifikatsanfrage-Code %s: %s",
                               data.get("code"), data.get("message"))
         except Exception as e:
-            _LOGGER.error("Failed to fetch MQTT certification: %s", e)
+            _LOGGER.error("Fehler beim Abrufen des MQTT-Zertifikats: %s", e)
         return {}
 
     def update_mqtt_data(self, topic: str, payload: dict):
         """
-        Called from the Paho MQTT thread in mqtt_handler.py -> on_message.
-        We must not call async_set_updated_data(...) here directly.
-        Instead, schedule an async call in the HA event loop.
+        Wird vom MQTT-Handler im separaten Thread aufgerufen.
+        Flattet die empfangenen Daten und aktualisiert self.mqtt_data.
+        Dann plant es die Aktualisierung im HA-Event-Loop.
         """
-        _LOGGER.debug("MQTT message on %s: %s", topic, payload)
-        for k, v in payload.items():
+        _LOGGER.debug("MQTT-Nachricht auf %s: %s", topic, payload)
+        
+        # Flattet die verschachtelten Daten
+        flat_data = self._flatten_dict(payload)
+        for k, v in flat_data.items():
             self.mqtt_data[k] = v
 
         if self.data is not None:
             combined_data = dict(self.data)
-            for k, val in payload.items():
+            for k, val in flat_data.items():
                 combined_data[k] = val
 
-            # schedule the actual update in the event loop
+            # Plane die Aktualisierung im HA-Event-Loop
             self.hass.add_job(self._async_update_mqtt_data, combined_data)
         else:
             self.hass.add_job(self._async_update_mqtt_data, self.data or {})
 
     async def _async_update_mqtt_data(self, new_data: dict):
         """
-        Runs in HA's event loop to safely call async_set_updated_data.
-        This avoids the "thread other than the event loop" error.
+        Führt async_set_updated_data sicher im HA-Event-Loop aus.
         """
         self.async_set_updated_data(new_data)
 
     def _generate_signature(self, payload: dict, method: str, path: str) -> dict:
-        """Creates HMAC-SHA256 signature per EcoFlow docs."""
+        """Erstellt HMAC-SHA256 Signatur gemäß EcoFlow-Dokumentation."""
         nonce = "123456"
         ts = str(int(time.time() * 1000))
 
@@ -207,22 +210,24 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
 
         return headers
 
-    def _flatten_dict(self, data: dict, prefix: str = "") -> str:
-        """Flatten dict for EcoFlow's sign method (ASCII-sorted, handle arrays)."""
-        items = []
-        if not data:
-            return ""
-        for key in sorted(data.keys()):
-            val = data[key]
-            new_key = f"{prefix}.{key}" if prefix else key
-            if isinstance(val, dict):
-                items.append(self._flatten_dict(val, new_key))
-            elif isinstance(val, list):
-                for i, v in enumerate(val):
-                    if isinstance(v, dict):
-                        items.append(self._flatten_dict(v, f"{new_key}[{i}]"))
+    def _flatten_dict(self, data: dict, parent_key: str = "", sep: str = ".") -> dict:
+        """
+        Flattet ein verschachteltes Dictionary in ein flaches Dictionary.
+        Beispiel:
+            {'a': {'b': 1}} -> {'a.b': 1}
+            {'a': [ {'b': 1}, {'c': 2} ]} -> {'a[0].b':1, 'a[1].c':2}
+        """
+        items = {}
+        for k, v in data.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.update(self._flatten_dict(v, new_key, sep=sep))
+            elif isinstance(v, list):
+                for idx, item in enumerate(v):
+                    if isinstance(item, dict):
+                        items.update(self._flatten_dict(item, f"{new_key}[{idx}]", sep=sep))
                     else:
-                        items.append(f"{new_key}[{i}]={v}")
+                        items[f"{new_key}[{idx}]"] = item
             else:
-                items.append(f"{new_key}={val}")
-        return "&".join(i for i in items if i)
+                items[new_key] = v
+        return items
