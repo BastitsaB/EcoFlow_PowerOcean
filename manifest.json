@@ -1,0 +1,8 @@
+{
+  "domain": "ecoflow_powerocean",
+  "name": "EcoFlow PowerOcean",
+  "version": "1.0.0",
+  "requirements": ["requests"],
+  "dependencies": [],
+  "codeowners": ["@deinGitHubName"]
+}
