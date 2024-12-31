@@ -1,9 +1,3 @@
-"""
-sensor.py – A comprehensive sensor setup for EcoFlow PowerOcean,
-now using modern UnitOfPower, UnitOfElectricCurrent, etc. instead of old constants.
-Also supports multi-device separation (PowerOcean, PowerHeat, etc.) if desired.
-"""
-
 import logging
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import (
