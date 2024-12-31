@@ -10,9 +10,6 @@ from homeassistant.core import HomeAssistant
 from .coordinator import EcoFlowDataCoordinator
 from .mqtt_handler import EcoFlowMQTTHandler
 
-from .coordinator import EcoFlowDataCoordinator
-from .mqtt_handler import EcoFlowMQTTHandler
-
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "ecoflow_powerocean"
@@ -46,7 +43,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload EcoFlow PowerOcean config entry."""
     """Unload EcoFlow PowerOcean config entry."""
     await hass.config_entries.async_forward_entry_unload(entry, "sensor")
     coordinator = hass.data[DOMAIN].pop(entry.entry_id, None)
