@@ -30,7 +30,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="EcoFlowDataCoordinator",
-            update_interval=timedelta(seconds=5)  # Alle 5 Sekunden abrufen
+            update_interval=timedelta(seconds=30)  # Alle 5 Sekunden abrufen
         )
         self._hass = hass
         self._config_entry = config_entry
