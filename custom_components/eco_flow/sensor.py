@@ -109,6 +109,7 @@ class EcoFlowBaseSensor(SensorEntity):
             "name": "EcoFlow PowerOcean (All Data)",
             "manufacturer": "EcoFlow",
             "model": "PowerOcean",
+            "model": "PowerOcean",
             "sw_version": "1.0.0",
         }
 
@@ -134,6 +135,11 @@ class EcoFlowBaseSensor(SensorEntity):
 class EcoFlowSingleValueSensor(EcoFlowBaseSensor):
     """Reads a single top-level key from coordinator.data."""
 
+    def __init__(self, coordinator, key: str, friendly_name: str, unit):
+        super().__init__(coordinator, friendly_name)
+        self.key = key
+        self._attr_native_unit_of_measurement = unit
+        self._unique_id = f"{coordinator.device_sn}_{key}"
     def __init__(self, coordinator, key: str, friendly_name: str, unit):
         super().__init__(coordinator, friendly_name)
         self.key = key
@@ -244,6 +250,7 @@ class EcoFlowNestedSensor(EcoFlowBaseSensor):
     @property
     def unique_id(self):
         return self._unique_id
+        return self._unique_id
 
     @property
     def state(self):
@@ -268,9 +275,14 @@ class EcoFlowHeatPumpSensor(EcoFlowBaseSensor):
         super().__init__(coordinator, friendly_name)
         self.root_key = root_key
         self._unique_id = f"{coordinator.device_sn}_{root_key}"
+    def __init__(self, coordinator, root_key: str, friendly_name: str):
+        super().__init__(coordinator, friendly_name)
+        self.root_key = root_key
+        self._unique_id = f"{coordinator.device_sn}_{root_key}"
 
     @property
     def unique_id(self):
+        return self._unique_id
         return self._unique_id
 
     @property
@@ -280,10 +292,12 @@ class EcoFlowHeatPumpSensor(EcoFlowBaseSensor):
     @property
     def state(self):
         root_obj = self.coordinator.data.get(self.root_key, {})
+        root_obj = self.coordinator.data.get(self.root_key, {})
         return root_obj.get("tempInlet", 0)
 
     @property
     def extra_state_attributes(self):
+        root_obj = self.coordinator.data.get(self.root_key, {})
         root_obj = self.coordinator.data.get(self.root_key, {})
         return {
             "tempOutlet": root_obj.get("tempOutlet"),
@@ -301,19 +315,26 @@ class EcoFlowErrorCodeSensor(EcoFlowBaseSensor):
         super().__init__(coordinator, friendly_name)
         self.root_key = root_key
         self._unique_id = f"{coordinator.device_sn}_{root_key}"
+    def __init__(self, coordinator, root_key: str, friendly_name: str):
+        super().__init__(coordinator, friendly_name)
+        self.root_key = root_key
+        self._unique_id = f"{coordinator.device_sn}_{root_key}"
 
     @property
     def unique_id(self):
         return self._unique_id
+        return self._unique_id
 
     @property
     def state(self):
+        err_obj = self.coordinator.data.get(self.root_key, {})
         err_obj = self.coordinator.data.get(self.root_key, {})
         codes = err_obj.get("errCode", [])
         return codes[0] if codes else 0
 
     @property
     def extra_state_attributes(self):
+        err_obj = self.coordinator.data.get(self.root_key, {})
         err_obj = self.coordinator.data.get(self.root_key, {})
         return {
             "all_error_codes": err_obj.get("errCode", [])
@@ -329,9 +350,13 @@ class EcoFlowHrEnergyStreamSensor(EcoFlowBaseSensor):
     def __init__(self, coordinator, friendly_name: str):
         super().__init__(coordinator, friendly_name)
         self._unique_id = f"{coordinator.device_sn}_hrEnergyStream"
+    def __init__(self, coordinator, friendly_name: str):
+        super().__init__(coordinator, friendly_name)
+        self._unique_id = f"{coordinator.device_sn}_hrEnergyStream"
 
     @property
     def unique_id(self):
+        return self._unique_id
         return self._unique_id
 
     @property
@@ -341,12 +366,14 @@ class EcoFlowHrEnergyStreamSensor(EcoFlowBaseSensor):
     @property
     def state(self):
         arr = self.coordinator.data.get("hrEnergyStream", [])
+        arr = self.coordinator.data.get("hrEnergyStream", [])
         if len(arr) > 0:
             return arr[0].get("hrPwr", 0)
         return 0
 
     @property
     def extra_state_attributes(self):
+        arr = self.coordinator.data.get("hrEnergyStream", [])
         arr = self.coordinator.data.get("hrEnergyStream", [])
         if len(arr) > 0:
             return {"temp": arr[0].get("temp")}
