@@ -17,6 +17,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
+    """Unload the EcoFlow PowerOcean config entry."""
     await hass.config_entries.async_forward_entry_unload(entry, "sensor")
     return True
