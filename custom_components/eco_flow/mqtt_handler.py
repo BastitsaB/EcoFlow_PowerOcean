@@ -1,7 +1,7 @@
 """
-mqtt_handler.py – A comprehensive MQTT handler for EcoFlow PowerOcean,
-auto-using data from coordinator.mqtt_cert_data if present.
-Subscribes to all known EcoFlow topics: quota, status, set, set_reply, get, get_reply.
+mqtt_handler.py – A comprehensive MQTT handler for EcoFlow,
+with thread-safety fix: we do NOT call async functions from here, 
+but delegate to coordinator.update_mqtt_data(), which schedules an event-loop job.
 """
 
 import logging
@@ -12,7 +12,7 @@ import paho.mqtt.client as mqtt
 _LOGGER = logging.getLogger(__name__)
 
 class EcoFlowMQTTHandler:
-    """Manages the MQTT connection to EcoFlow and merges incoming data into coordinator."""
+    """Manages the MQTT connection to EcoFlow broker and merges incoming data into coordinator."""
 
     def __init__(self, hass, coordinator):
         self.hass = hass
@@ -21,7 +21,6 @@ class EcoFlowMQTTHandler:
         self.loop = asyncio.get_event_loop()
         self.connected = False
 
-        # Read from coordinator.mqtt_cert_data
         cert_info = self.coordinator.mqtt_cert_data
         self.mqtt_host = cert_info.get("url", "mqtt.ecoflow.com")
         self.mqtt_port = int(cert_info.get("port", 8883))
@@ -33,7 +32,6 @@ class EcoFlowMQTTHandler:
         self.sn = self.coordinator.device_sn
         self.certificate_account = self.mqtt_user
 
-        # EcoFlow doc: topics
         self.topics_to_subscribe = [
             "quota",
             "status",
@@ -44,13 +42,13 @@ class EcoFlowMQTTHandler:
         ]
 
     def connect(self):
-        """Connect to EcoFlow MQTT broker."""
+        """Connect to EcoFlow MQTT broker in a separate thread."""
         self.client = mqtt.Client()
         self.client.username_pw_set(self.mqtt_user, self.mqtt_pass)
 
         if self.use_tls:
             self.client.tls_set()
-            _LOGGER.debug("Using TLS for MQTT connection (protocol: mqtts).")
+            _LOGGER.debug("Using TLS for MQTT (protocol: mqtts).")
 
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -87,7 +85,7 @@ class EcoFlowMQTTHandler:
         _LOGGER.warning("MQTT disconnected (rc: %s).", rc)
 
     def on_message(self, client, userdata, msg):
-        """Handle an incoming MQTT message."""
+        """Handle an incoming MQTT message (in a paho.mqtt thread)."""
         try:
             payload_str = msg.payload.decode("utf-8")
             payload_json = json.loads(payload_str)
@@ -97,11 +95,10 @@ class EcoFlowMQTTHandler:
 
         _LOGGER.debug("Received MQTT message on %s: %s", msg.topic, payload_json)
 
-        # EcoFlow often has data in payload_json["params"]
         if "params" in payload_json:
             data = payload_json["params"]
         else:
             data = payload_json
 
-        # Let coordinator merge this new data
+        # Calls a synchronous method that schedules an async update in the HA loop
         self.coordinator.update_mqtt_data(msg.topic, data)
