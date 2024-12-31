@@ -23,7 +23,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
     """
     Koordiniert Datenaktualisierungen von EcoFlow Cloud und integriert MQTT-Daten sicher.
 
-    - Polling für normale (aktuelle) Daten alle 5 Sekunden
+    - Polling für normale (aktuelle) Daten alle 15 Sekunden
     - Historische Daten nur alle 5 Minuten
     """
 
@@ -32,7 +32,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="EcoFlowDataCoordinator",
-            update_interval=timedelta(seconds=5),  # Polling alle 5 Sekunden
+            update_interval=timedelta(seconds=15),  # Polling alle 15 Sekunden
         )
         self._hass = hass
         self._config_entry = config_entry
@@ -57,7 +57,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self):
         """
-        Wird alle 5 Sekunden vom DataUpdateCoordinator aufgerufen.
+        Wird alle 15 Sekunden vom DataUpdateCoordinator aufgerufen.
         Holt normale Daten und bei Bedarf historische Daten.
         """
         try:
