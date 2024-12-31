@@ -1,0 +1,8 @@
+{
+  "domain": "EcoFlow_PowerOcean",
+  "name": "EcoFlow PowerOcean",
+  "version": "1.0.0",
+  "homeassistant": "2024.8.0",
+  "requirements": [],
+  "codeowners": ["BastitsaB"]
+}
