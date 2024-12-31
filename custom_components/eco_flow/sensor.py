@@ -5,7 +5,7 @@ import requests
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.const import ENERGY_KILO_WATT_HOUR
-from . import DOMAIN
+from ... import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 

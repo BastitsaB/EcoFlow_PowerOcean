@@ -5,7 +5,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.const import CONF_NAME
 
-from . import DOMAIN
+from ... import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
