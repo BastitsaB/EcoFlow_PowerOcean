@@ -1,7 +1,7 @@
 {
   "domain": "ecoflow_powerocean",
   "name": "EcoFlow PowerOcean",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "requirements": ["requests"],
   "dependencies": [],
   "codeowners": ["BastitsaB"],
