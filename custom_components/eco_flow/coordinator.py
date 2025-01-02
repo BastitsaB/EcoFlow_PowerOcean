@@ -1,8 +1,8 @@
 """
 coordinator.py – Coordinator for EcoFlow PowerOcean data (REST + MQTT),
 mit:
- - 5-Sekunden-Polling für normale "all quotas" Daten
- - 5-Minuten-Polling für historische Daten
+ - 180-Sekunden-Polling für normale "all quotas" Daten
+ - 60-Minuten-Polling für historische Daten
  - Automatisches Abrufen des MQTT-Zertifikats bei Bedarf
  - Thread-Safety-Fix: async_set_updated_data wird sicher im HA-Event-Loop ausgeführt
 """
@@ -23,7 +23,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
     """
     Koordiniert Datenaktualisierungen von EcoFlow Cloud und integriert MQTT-Daten sicher.
 
-    - Polling für normale (aktuelle) Daten alle 15 Sekunden
+    - Polling für normale (aktuelle) Daten alle 180 Sekunden
     - Historische Daten nur alle 5 Minuten
     """
 
@@ -32,7 +32,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="EcoFlowDataCoordinator",
-            update_interval=timedelta(seconds=15),  # Polling alle 15 Sekunden
+            update_interval=timedelta(seconds=180),  # Polling alle 180 Sekunden
         )
         self._hass = hass
         self._config_entry = config_entry
@@ -53,7 +53,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
 
         # Historische Daten-Abfrage-Intervall
         self._last_history_fetch = None
-        self._history_interval_sec = 300  # 5 Minuten
+        self._history_interval_sec = 3600  # 1 Stunde
 
     async def _async_update_data(self):
         """
@@ -66,7 +66,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             _LOGGER.error("Fehler beim Abrufen der normalen Quotas: %s", exc)
             raise
 
-        # Historische Daten nur alle 5 Minuten abrufen
+        # Historische Daten nur alle Stunde abrufen
         need_history = False
         now = datetime.now()
         if not self._last_history_fetch:
