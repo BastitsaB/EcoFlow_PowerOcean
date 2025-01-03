@@ -34,11 +34,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         coordinator.mqtt_handler = mqtt_handler
         await hass.async_add_executor_job(mqtt_handler.connect)
 
-    # Properly await async_forward_entry_setup (no create_task)
-    await hass.config_entries.async_forward_entry_setup(entry, "sensor")
+    # Use the new async_forward_entry_setups method
+    await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
 
     return True
-
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload EcoFlow PowerOcean config entry."""
