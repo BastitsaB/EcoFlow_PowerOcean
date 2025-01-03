@@ -81,7 +81,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
         headers = self._generate_signature(params, "GET", "/iot-open/sign/device/quota/all")
 
         try:
-            response = requests.get(endpoint, params=params, headers=headers, timeout=10)
+            response = requests.get(endpoint, params=params, headers=headers, timeout=30)
             response.raise_for_status()
             js = response.json()
             _LOGGER.debug("Abruf aller Quotas erfolgreich. Antwort: %s", js)
@@ -135,16 +135,12 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
         self.async_set_updated_data(new_data)
 
     def _generate_signature(self, payload: dict, method: str, path: str) -> dict:
-        nonce = "123456"
-        ts = str(int(time.time() * 1000))
+        nonce = "123456"  # Beispielwert
+        ts = str(int(time.time() * 1000))  # UTC-Timestamp in Millisekunden
 
         flat = self._flatten_dict(payload)
-        if flat:
-            sign_base = "&".join(f"{k}={v}" for k, v in sorted(flat.items()))
-            sign_base += "&"
-        else:
-            sign_base = ""
-        sign_base += f"accessKey={self.access_key}&nonce={nonce}&timestamp={ts}"
+        sign_base = "&".join(f"{k}={v}" for k, v in sorted(flat.items()))
+        sign_base += f"&accessKey={self.access_key}&nonce={nonce}&timestamp={ts}"
 
         signature = hmac.new(
             self.secret_key.encode("utf-8"),
@@ -161,7 +157,10 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
         if method == "POST":
             headers["Content-Type"] = "application/json;charset=UTF-8"
 
+        _LOGGER.debug("Generated Signature: %s", signature)
+        _LOGGER.debug("Headers: %s", headers)
         return headers
+
 
     def _flatten_dict(self, data: dict, parent_key: str = "", sep: str = ".") -> dict:
         items = {}
@@ -188,7 +187,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
         headers = self._generate_signature(payload, "GET", "/iot-open/sign/certification")
 
         try:
-            response = requests.get(endpoint, headers=headers, timeout=10)
+            response = requests.get(endpoint, headers=headers, timeout=30)
             response.raise_for_status()
             data = response.json()
             if data.get("code") == "0":
