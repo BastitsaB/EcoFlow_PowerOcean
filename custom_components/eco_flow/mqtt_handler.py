@@ -1,17 +1,14 @@
-"""
-mqtt_handler.py – A comprehensive MQTT handler for EcoFlow,
-optimized for clarity and thread safety, delegating async updates to coordinator.
-"""
-
 import logging
-import asyncio
+import hmac
+import hashlib
+import time
 import json
 import paho.mqtt.client as mqtt
 
 _LOGGER = logging.getLogger(__name__)
 
 class EcoFlowMQTTHandler:
-    """Manages the MQTT connection to EcoFlow broker and merges incoming data into coordinator."""
+    """Manages the MQTT connection to EcoFlow broker with proper signature authentication."""
 
     def __init__(self, hass, coordinator):
         self.hass = hass
@@ -23,19 +20,28 @@ class EcoFlowMQTTHandler:
         cert_info = self.coordinator.mqtt_cert_data
         self.mqtt_host = cert_info.get("url", "mqtt.ecoflow.com")
         self.mqtt_port = int(cert_info.get("port", 8883))
-        self.mqtt_user = cert_info.get("certificateAccount", "open-xxxx")
-        self.mqtt_pass = cert_info.get("certificatePassword", "xxxx")
+        self.access_key = cert_info.get("accessKey")
+        self.secret_key = cert_info.get("secretKey")
+        self.device_sn = self.coordinator.device_sn
         self.use_tls = cert_info.get("protocol", "mqtts") == "mqtts"
 
-        self.sn = self.coordinator.device_sn
-        self.certificate_account = self.mqtt_user
-
         self.topics_to_subscribe = ["quota"]
+
+    def generate_signature(self, params, access_key, nonce, timestamp, secret_key):
+        """Generate HMAC-SHA256 signature based on the given parameters."""
+        param_string = "&".join(f"{k}={v}" for k, v in sorted(params.items()))
+        full_string = f"{param_string}&accessKey={access_key}&nonce={nonce}&timestamp={timestamp}"
+        signature = hmac.new(
+            secret_key.encode('utf-8'),
+            full_string.encode('utf-8'),
+            hashlib.sha256
+        ).hexdigest()
+        return signature
 
     def connect(self):
         """Connect to EcoFlow MQTT broker in a separate thread."""
         self.client = mqtt.Client()
-        self.client.username_pw_set(self.mqtt_user, self.mqtt_pass)
+        self.client.username_pw_set(self.access_key, self.secret_key)
 
         if self.use_tls:
             self.client.tls_set()
@@ -66,7 +72,7 @@ class EcoFlowMQTTHandler:
             self.connected = True
             _LOGGER.info("EcoFlow MQTT connected successfully.")
             for topic in self.topics_to_subscribe:
-                full_topic = f"/open/{self.certificate_account}/{self.sn}/{topic}"
+                full_topic = f"/open/{self.access_key}/{self.device_sn}/{topic}"
                 client.subscribe(full_topic)
                 _LOGGER.info("Subscribed to MQTT topic: %s", full_topic)
         else:
