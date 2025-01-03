@@ -7,144 +7,96 @@ from homeassistant.const import (
     UnitOfReactivePower,
     UnitOfApparentPower,
     UnitOfTemperature,
-    PERCENTAGE
+    PERCENTAGE,
 )
 from . import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-
 async def async_setup_entry(hass, config_entry, async_add_entities):
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
     sensor_entities = []
 
-    # System Load Power
+    # General System Sensors
     sensor_entities.append(EcoFlowSingleValueSensor(
         coordinator,
         key="sysLoadPwr",
         friendly_name="System Load Power",
         unit=UnitOfPower.WATT,
-        device_type="PowerOcean"
+        device_type="System"
     ))
-
-    # Grid Power
     sensor_entities.append(EcoFlowSingleValueSensor(
         coordinator,
         key="sysGridPwr",
-        friendly_name="Grid Power",
+        friendly_name="System Grid Power",
         unit=UnitOfPower.WATT,
-        device_type="PowerOcean"
+        device_type="System"
     ))
-
-    # Battery Power
     sensor_entities.append(EcoFlowSingleValueSensor(
         coordinator,
         key="bpPwr",
         friendly_name="Battery Power",
         unit=UnitOfPower.WATT,
-        device_type="PowerOcean"
+        device_type="Battery"
     ))
-
-    # Battery SoC
     sensor_entities.append(EcoFlowSingleValueSensor(
         coordinator,
         key="ems_change_report.bpSoc",
-        friendly_name="Battery State of Charge",
+        friendly_name="Battery SoC",
         unit=PERCENTAGE,
-        device_type="PowerOcean"
+        device_type="Battery"
     ))
-
-    # SG Mode
-    sensor_entities.append(EcoFlowSingleValueSensor(
-        coordinator,
-        key="ems_change_report.emsSgReady.emsSgMode",
-        friendly_name="SG Mode",
-        unit=None,
-        device_type="PowerOcean"
-    ))
-
-    # SG Parameters
-    for idx, sg_param in enumerate(coordinator.data.get("ems_change_report.emsSgReady.emsSgParam", [])):
-        sensor_entities.append(EcoFlowNestedSensor(
-            coordinator,
-            root_key=f"ems_change_report.emsSgReady.emsSgParam[{idx}]",
-            friendly_name=f"SG Parameter {idx+1} Power",
-            sub_key="emsSgPwr",
-            unit=UnitOfPower.WATT,
-            device_type="PowerOcean"
-        ))
-        sensor_entities.append(EcoFlowNestedSensor(
-            coordinator,
-            root_key=f"ems_change_report.emsSgReady.emsSgParam[{idx}]",
-            friendly_name=f"SG Parameter {idx+1} Status",
-            sub_key="emsSgStat",
-            unit=None,
-            device_type="PowerOcean"
-        ))
-        if "emsSgSoc" in sg_param:  # Optional
-            sensor_entities.append(EcoFlowNestedSensor(
-                coordinator,
-                root_key=f"ems_change_report.emsSgReady.emsSgParam[{idx}]",
-                friendly_name=f"SG Parameter {idx+1} SOC",
-                sub_key="emsSgSoc",
-                unit=PERCENTAGE,
-                device_type="PowerOcean"
-            ))
 
     # Phase Sensors
-    for phase_name, phase_data in [("A", "pcsAPhase"), ("B", "pcsBPhase"), ("C", "pcsCPhase")]:
-        for key, label, unit in [
-            ("vol", "Voltage", UnitOfElectricPotential.VOLT),
-            ("amp", "Current", UnitOfElectricCurrent.AMPERE),
-            ("actPwr", "Active Power", UnitOfPower.WATT),
-            ("reactPwr", "Reactive Power", UnitOfReactivePower.VOLT_AMPERE_REACTIVE),
-            ("apparentPwr", "Apparent Power", UnitOfApparentPower.VOLT_AMPERE)
-        ]:
-            sensor_entities.append(EcoFlowNestedSensor(
+    phase_letters = ["A", "B", "C"]
+    phase_detail_keys = [
+        ("vol", "Voltage", UnitOfElectricPotential.VOLT),
+        ("amp", "Current", UnitOfElectricCurrent.AMPERE),
+        ("actPwr", "Active Power", UnitOfPower.WATT),
+        ("reactPwr", "Reactive Power", UnitOfReactivePower.VOLT_AMPERE_REACTIVE),
+        ("apparentPwr", "Apparent Power", UnitOfApparentPower.VOLT_AMPERE),
+    ]
+    for phase in phase_letters:
+        for detail_key, detail_name, detail_unit in phase_detail_keys:
+            sensor_entities.append(EcoFlowPhaseDetailSensor(
                 coordinator,
-                root_key=phase_data,
-                friendly_name=f"Phase {phase_name} {label}",
-                sub_key=key,
-                unit=unit,
-                device_type="PowerOcean"
+                phase=phase,
+                detail_key=detail_key,
+                name_suffix=detail_name,
+                unit=detail_unit,
+                device_type="Phase"
             ))
 
     # MPPT Sensors
-    mppt_data = coordinator.data.get("mpptHeartBeat", [])
-    for idx, mppt in enumerate(mppt_data):
-        for pv_idx, pv_data in enumerate(mppt.get("mpptPv", [])):
-            sensor_entities.append(EcoFlowNestedSensor(
-                coordinator,
-                root_key=f"mpptHeartBeat[{idx}].mpptPv[{pv_idx}]",
-                friendly_name=f"MPPT {idx+1} PV {pv_idx+1} Power",
-                sub_key="pwr",
-                unit=UnitOfPower.WATT,
-                device_type="PowerOcean"
-            ))
-            sensor_entities.append(EcoFlowNestedSensor(
-                coordinator,
-                root_key=f"mpptHeartBeat[{idx}].mpptPv[{pv_idx}]",
-                friendly_name=f"MPPT {idx+1} PV {pv_idx+1} Voltage",
-                sub_key="vol",
-                unit=UnitOfElectricPotential.VOLT,
-                device_type="PowerOcean"
-            ))
-            sensor_entities.append(EcoFlowNestedSensor(
-                coordinator,
-                root_key=f"mpptHeartBeat[{idx}].mpptPv[{pv_idx}]",
-                friendly_name=f"MPPT {idx+1} PV {pv_idx+1} Current",
-                sub_key="amp",
-                unit=UnitOfElectricCurrent.AMPERE,
-                device_type="PowerOcean"
-            ))
-
-    # Total MPPT Power
+    sensor_entities.append(EcoFlowNestedSensor(
+        coordinator,
+        root_key="mpptHeartBeat[0].mpptPv[0]",
+        friendly_name="MPPT PV1 Power",
+        sub_key="pwr",
+        unit=UnitOfPower.WATT,
+        device_type="MPPT"
+    ))
+    sensor_entities.append(EcoFlowNestedSensor(
+        coordinator,
+        root_key="mpptHeartBeat[0].mpptPv[1]",
+        friendly_name="MPPT PV2 Power",
+        sub_key="pwr",
+        unit=UnitOfPower.WATT,
+        device_type="MPPT"
+    ))
     sensor_entities.append(EcoFlowSingleValueSensor(
         coordinator,
         key="mpptPwr",
         friendly_name="MPPT Total Power",
         unit=UnitOfPower.WATT,
-        device_type="PowerOcean"
+        device_type="MPPT"
+    ))
+
+    # Self-Sufficiency Sensor
+    sensor_entities.append(EcoFlowHistorySensor(
+        coordinator,
+        friendly_name="Self-Sufficiency",
+        device_type="History"
     ))
 
     async_add_entities(sensor_entities)
@@ -199,6 +151,25 @@ class EcoFlowSingleValueSensor(EcoFlowBaseSensor):
         return self.coordinator.data.get(self.key, 0)
 
 
+class EcoFlowPhaseDetailSensor(EcoFlowBaseSensor):
+    def __init__(self, coordinator, phase: str, detail_key: str, name_suffix: str, unit, device_type: str):
+        super().__init__(coordinator, f"Phase {phase} {name_suffix}", device_type)
+        self.phase = phase
+        self.detail_key = detail_key
+        self._attr_native_unit_of_measurement = unit
+        self._unique_id = f"{coordinator.device_sn}_{device_type}_pcs{phase}Phase_{detail_key}"
+
+    @property
+    def unique_id(self):
+        return self._unique_id
+
+    @property
+    def state(self):
+        root_key = f"pcs{self.phase}Phase"
+        obj = self.coordinator.data.get(root_key, {})
+        return obj.get(self.detail_key, 0)
+
+
 class EcoFlowNestedSensor(EcoFlowBaseSensor):
     def __init__(self, coordinator, root_key: str, friendly_name: str, sub_key: str, unit, device_type: str):
         super().__init__(coordinator, friendly_name, device_type)
@@ -215,3 +186,29 @@ class EcoFlowNestedSensor(EcoFlowBaseSensor):
     def state(self):
         root_obj = self.coordinator.data.get(self.root_key, {})
         return root_obj.get(self.sub_key, 0)
+
+
+class EcoFlowHistorySensor(EcoFlowBaseSensor):
+    def __init__(self, coordinator, friendly_name: str, device_type: str):
+        super().__init__(coordinator, friendly_name, device_type)
+        self._unique_id = f"{coordinator.device_sn}_{device_type}_history"
+
+    @property
+    def unique_id(self):
+        return self._unique_id
+
+    @property
+    def state(self):
+        hist_data = self.coordinator.data.get("historical_data", {})
+        data_arr = hist_data.get("data", [])
+        for item in data_arr:
+            if item.get("indexName") == "Self-sufficiency":
+                return item.get("indexValue", 0)
+        return 0
+
+    @property
+    def extra_state_attributes(self):
+        hist_data = self.coordinator.data.get("historical_data", {})
+        return {
+            "raw_history_data": hist_data
+        }
