@@ -85,33 +85,33 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Kombinierte Daten: %s", combined)
         return combined
 
-def _process_get_all_quota_response(self, data: dict) -> dict:
-    """Prozessiert und validiert die Quotas-Daten."""
-    try:
-        processed_data = self._flatten_dict(data)
-        _LOGGER.debug("Prozessierte Quotas-Daten: %s", processed_data)
-        return processed_data
-    except Exception as e:
-        _LOGGER.error("Fehler bei der Verarbeitung der Quotas-Daten: %s", e)
-        return {}
+    def _process_get_all_quota_response(self, data: dict) -> dict:
+        """Prozessiert und validiert die Quotas-Daten."""
+        try:
+            processed_data = self._flatten_dict(data)
+            _LOGGER.debug("Prozessierte Quotas-Daten: %s", processed_data)
+            return processed_data
+        except Exception as e:
+            _LOGGER.error("Fehler bei der Verarbeitung der Quotas-Daten: %s", e)
+            return {}
 
 
-def _fetch_all_quotas(self) -> dict:
-    """Blockierender Aufruf: GET /iot-open/sign/device/quota/all."""
-    endpoint = f"{self.base_url}/iot-open/sign/device/quota/all"
-    params = {"sn": self.device_sn}
-    headers = self._generate_signature(params, "GET", "/iot-open/sign/device/quota/all")
+    def _fetch_all_quotas(self) -> dict:
+        """Blockierender Aufruf: GET /iot-open/sign/device/quota/all."""
+        endpoint = f"{self.base_url}/iot-open/sign/device/quota/all"
+        params = {"sn": self.device_sn}
+        headers = self._generate_signature(params, "GET", "/iot-open/sign/device/quota/all")
 
-    try:
-        r = requests.get(endpoint, params=params, headers=headers, timeout=10)
-        r.raise_for_status()
-        js = r.json()
-        _LOGGER.debug("Abruf aller Quotas: %s", js.get("data", {}))
-        raw_data = js.get("data", {})
-        return self._process_get_all_quota_response(raw_data)
-    except Exception as e:
-        _LOGGER.error("Fehler beim Abrufen aller Quotas: %s", e)
-        return {}
+        try:
+            r = requests.get(endpoint, params=params, headers=headers, timeout=10)
+            r.raise_for_status()
+            js = r.json()
+            _LOGGER.debug("Abruf aller Quotas: %s", js.get("data", {}))
+            raw_data = js.get("data", {})
+            return self._process_get_all_quota_response(raw_data)
+        except Exception as e:
+            _LOGGER.error("Fehler beim Abrufen aller Quotas: %s", e)
+            return {}
 
 
     def _fetch_historical_data(self) -> dict:
