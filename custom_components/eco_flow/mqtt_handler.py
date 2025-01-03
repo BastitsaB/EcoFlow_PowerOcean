@@ -20,6 +20,7 @@ class EcoFlowMQTTHandler:
         self.client = None
         self.loop = asyncio.get_event_loop()
         self.connected = False
+        self.message_count = 0  # Zähler für MQTT-Nachrichten
 
         cert_info = self.coordinator.mqtt_cert_data
         self.mqtt_host = cert_info.get("url", "mqtt.ecoflow.com")
@@ -54,8 +55,11 @@ class EcoFlowMQTTHandler:
         self.client.on_message = self.on_message
         self.client.on_disconnect = self.on_disconnect
 
-        self.client.connect(self.mqtt_host, self.mqtt_port, 60)
-        _LOGGER.info("Connecting to EcoFlow MQTT broker at %s:%s", self.mqtt_host, self.mqtt_port)
+        try:
+            self.client.connect(self.mqtt_host, self.mqtt_port, 60)
+            _LOGGER.info("Connecting to EcoFlow MQTT broker at %s:%s", self.mqtt_host, self.mqtt_port)
+        except Exception as exc:
+            _LOGGER.error("Failed to connect to MQTT broker: %s", exc)
 
         self.client.loop_start()
 
@@ -77,12 +81,44 @@ class EcoFlowMQTTHandler:
                 client.subscribe(topic)
                 _LOGGER.info("Subscribed to MQTT topic: %s", topic)
         else:
-            _LOGGER.error("MQTT connection failed with code %s", rc)
+            _LOGGER.error(
+                "MQTT connection failed with code %s. Description: %s",
+                rc,
+                self._get_mqtt_error_description(rc),
+            )
+
+    def _get_mqtt_error_description(self, rc):
+        """Map MQTT error codes to descriptions."""
+        errors = {
+            1: "Unacceptable protocol version",
+            2: "Identifier rejected",
+            3: "Server unavailable",
+            4: "Bad username or password",
+            5: "Not authorized",
+        }
+        return errors.get(rc, "Unknown error")
 
     def on_disconnect(self, client, userdata, rc):
         """Callback on disconnection."""
         self.connected = False
-        _LOGGER.warning("MQTT disconnected (rc: %s).", rc)
+        if rc == 0:
+            _LOGGER.info("MQTT disconnected gracefully.")
+        else:
+            _LOGGER.warning(
+                "MQTT disconnected unexpectedly (rc: %s). Reason: %s",
+                rc,
+                self._get_disconnect_reason(rc),
+            )
+
+    def _get_disconnect_reason(self, rc):
+        """Map MQTT disconnect codes to reasons."""
+        reasons = {
+            0: "Graceful disconnect",
+            1: "Unexpected error",
+            2: "Network error",
+            3: "Client closed connection",
+        }
+        return reasons.get(rc, "Unknown reason")
 
     def on_message(self, client, userdata, msg):
         """Handle an incoming MQTT message (in a paho.mqtt thread)."""
@@ -95,10 +131,22 @@ class EcoFlowMQTTHandler:
 
         _LOGGER.debug("Received MQTT message on %s: %s", msg.topic, payload_json)
 
+        if not payload_json:
+            _LOGGER.warning("Empty MQTT message received on %s", msg.topic)
+            return
+
         if "params" in payload_json:
             data = payload_json["params"]
         else:
             data = payload_json
 
+        if not data:
+            _LOGGER.warning("Empty 'params' in MQTT message on %s", msg.topic)
+            return
+
+        self.message_count += 1
+        _LOGGER.info("Total MQTT messages received: %d", self.message_count)
+
         # Calls a synchronous method that schedules an async update in the HA loop
         self.coordinator.update_mqtt_data(msg.topic, data)
+
