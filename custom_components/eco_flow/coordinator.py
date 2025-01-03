@@ -56,59 +56,63 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
         self._history_interval_sec = 3600  # 1 Stunde
 
     async def _async_update_data(self):
-        """
-        Wird alle 15 Sekunden vom DataUpdateCoordinator aufgerufen.
-        Holt normale Daten und bei Bedarf historische Daten.
-        """
         try:
+            # Abruf der normalen Quotas
             self.cloud_data = await self._hass.async_add_executor_job(self._fetch_all_quotas)
         except Exception as exc:
             _LOGGER.error("Fehler beim Abrufen der normalen Quotas: %s", exc)
             raise
 
-        # Historische Daten nur alle Stunde abrufen
+        # Historische Daten
         need_history = False
         now = datetime.now()
-        if not self._last_history_fetch:
+        if not self._last_history_fetch or (now - self._last_history_fetch).total_seconds() > self._history_interval_sec:
             need_history = True
-        else:
-            delta_sec = (now - self._last_history_fetch).total_seconds()
-            if delta_sec > self._history_interval_sec:
-                need_history = True
 
         if need_history:
-            _LOGGER.debug("Abrufen historischer Daten ...")
             try:
                 self.historical_data = await self._hass.async_add_executor_job(self._fetch_historical_data)
             except Exception as exc:
                 _LOGGER.error("Fehler beim Abrufen historischer Daten: %s", exc)
             self._last_history_fetch = now
 
-        # Daten zusammenführen
-        combined = {}
-        combined.update(self.cloud_data)
-        combined["historical_data"] = self.historical_data
+        # Kombinierte Datenstruktur erstellen
+        combined = dict(self.cloud_data)  # Basisdaten
+        combined.update(self.historical_data)  # Historische Daten hinzufügen
+        for key, value in self.mqtt_data.items():
+            combined[key] = value  # MQTT-Daten hinzufügen oder aktualisieren
 
-        for k, v in self.mqtt_data.items():
-            combined[k] = v
-
+        _LOGGER.debug("Kombinierte Daten: %s", combined)
         return combined
 
-    def _fetch_all_quotas(self) -> dict:
-        """Blockierender Aufruf: GET /iot-open/sign/device/quota/all."""
-        endpoint = f"{self.base_url}/iot-open/sign/device/quota/all"
-        params = {"sn": self.device_sn}
-        headers = self._generate_signature(params, "GET", "/iot-open/sign/device/quota/all")
+def _process_get_all_quota_response(self, data: dict) -> dict:
+    """Prozessiert und validiert die Quotas-Daten."""
+    try:
+        processed_data = self._flatten_dict(data)
+        _LOGGER.debug("Prozessierte Quotas-Daten: %s", processed_data)
+        return processed_data
+    except Exception as e:
+        _LOGGER.error("Fehler bei der Verarbeitung der Quotas-Daten: %s", e)
+        return {}
 
-        try:
-            r = requests.get(endpoint, params=params, headers=headers, timeout=10)
-            r.raise_for_status()
-            js = r.json()
-            _LOGGER.debug("Abruf aller Quotas: %s", js.get("data", {}))
-            return js.get("data", {})
-        except Exception as e:
-            _LOGGER.error("Fehler beim Abrufen aller Quotas: %s", e)
-            return {}
+
+def _fetch_all_quotas(self) -> dict:
+    """Blockierender Aufruf: GET /iot-open/sign/device/quota/all."""
+    endpoint = f"{self.base_url}/iot-open/sign/device/quota/all"
+    params = {"sn": self.device_sn}
+    headers = self._generate_signature(params, "GET", "/iot-open/sign/device/quota/all")
+
+    try:
+        r = requests.get(endpoint, params=params, headers=headers, timeout=10)
+        r.raise_for_status()
+        js = r.json()
+        _LOGGER.debug("Abruf aller Quotas: %s", js.get("data", {}))
+        raw_data = js.get("data", {})
+        return self._process_get_all_quota_response(raw_data)
+    except Exception as e:
+        _LOGGER.error("Fehler beim Abrufen aller Quotas: %s", e)
+        return {}
+
 
     def _fetch_historical_data(self) -> dict:
         """Blockierender Aufruf: POST /iot-open/sign/device/quota/data für historische Informationen."""
@@ -155,23 +159,24 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
 
     def update_mqtt_data(self, topic: str, payload: dict):
         """
-        Wird vom MQTT-Handler im separaten Thread aufgerufen.
-        Flattet die empfangenen Daten und aktualisiert self.mqtt_data.
-        Dann plant es die Aktualisierung im HA-Event-Loop.
+        Verarbeitung und Integration von MQTT-Daten.
         """
         _LOGGER.debug("MQTT-Nachricht auf %s: %s", topic, payload)
         
-        # Flattet die verschachtelten Daten
+        # Daten flach darstellen
         flat_data = self._flatten_dict(payload)
-        for k, v in flat_data.items():
-            self.mqtt_data[k] = v
 
+        # Update mqtt_data
+        for key, value in flat_data.items():
+            if key not in self.cloud_data:  # Überschreiben von cloud_data vermeiden
+                self.mqtt_data[key] = value
+            else:
+                _LOGGER.warning("MQTT-Daten ignoriert: Schlüssel %s existiert bereits in cloud_data", key)
+
+        # Daten im Event-Loop aktualisieren
         if self.data is not None:
             combined_data = dict(self.data)
-            for k, val in flat_data.items():
-                combined_data[k] = val
-
-            # Plane die Aktualisierung im HA-Event-Loop
+            combined_data.update(self.mqtt_data)
             self.hass.add_job(self._async_update_mqtt_data, combined_data)
         else:
             self.hass.add_job(self._async_update_mqtt_data, self.data or {})
