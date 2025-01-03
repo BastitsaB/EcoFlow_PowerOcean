@@ -84,11 +84,15 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             response = requests.get(endpoint, params=params, headers=headers, timeout=10)
             response.raise_for_status()
             js = response.json()
-            _LOGGER.debug("Abruf aller Quotas: %s", js.get("data", {}))
+            _LOGGER.debug("Abruf aller Quotas erfolgreich. Antwort: %s", js)
             return js.get("data", {})
+        except requests.RequestException as e:
+            _LOGGER.error("Fehler beim Abrufen aller Quotas (HTTP-Fehler): %s", e)
         except Exception as e:
-            _LOGGER.error("Fehler beim Abrufen aller Quotas: %s", e)
-            return {}
+            _LOGGER.error("Fehler beim Abrufen aller Quotas (Allgemeiner Fehler): %s", e)
+
+        _LOGGER.warning("Fallback: Verwende letzte bekannte Daten.")
+        return self.cloud_data or {}
 
     def _fetch_historical_data(self) -> dict:
         endpoint = f"{self.base_url}/iot-open/sign/device/quota/data"
