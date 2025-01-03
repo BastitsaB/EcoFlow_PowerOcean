@@ -174,3 +174,30 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             else:
                 items[new_key] = v
         return items
+    
+    def fetch_mqtt_certification(self) -> dict:
+        """
+        Fetch the MQTT certification required for the connection.
+        """
+        endpoint = f"{self.base_url}/iot-open/sign/certification"
+        payload = {}
+        headers = self._generate_signature(payload, "GET", "/iot-open/sign/certification")
+
+        try:
+            response = requests.get(endpoint, headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("code") == "0":
+                self.mqtt_cert_data = data.get("data", {})
+                _LOGGER.debug("MQTT certification fetched: %s", self.mqtt_cert_data)
+                return self.mqtt_cert_data
+            else:
+                _LOGGER.error(
+                    "Error fetching MQTT certification: Code %s, Message %s",
+                    data.get("code"),
+                    data.get("message"),
+                )
+        except Exception as e:
+            _LOGGER.error("Exception while fetching MQTT certification: %s", e)
+        return {}
+
