@@ -1,7 +1,7 @@
 """
 coordinator.py – Coordinator for EcoFlow PowerOcean data (REST + MQTT),
 mit:
- - 180-Sekunden-Polling für normale "all quotas" Daten
+ - 60-Sekunden-Polling für normale "all quotas" Daten
  - 60-Minuten-Polling für historische Daten
  - Automatisches Abrufen des MQTT-Zertifikats bei Bedarf
  - Thread-Safety-Fix: async_set_updated_data wird sicher im HA-Event-Loop ausgeführt
@@ -23,7 +23,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
     """
     Koordiniert Datenaktualisierungen von EcoFlow Cloud und integriert MQTT-Daten sicher.
 
-    - Polling für normale (aktuelle) Daten alle 180 Sekunden
+    - Polling für normale (aktuelle) Daten alle 60 Sekunden
     - Historische Daten nur alle 5 Minuten
     """
 
@@ -32,7 +32,7 @@ class EcoFlowDataCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="EcoFlowDataCoordinator",
-            update_interval=timedelta(seconds=180),  # Polling alle 180 Sekunden
+            update_interval=timedelta(seconds=60),  # Polling alle 60 Sekunden
         )
         self._hass = hass
         self._config_entry = config_entry
