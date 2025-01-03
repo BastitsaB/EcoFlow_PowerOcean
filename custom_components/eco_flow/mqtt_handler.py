@@ -1,7 +1,6 @@
 """
 mqtt_handler.py – A comprehensive MQTT handler for EcoFlow,
-with thread-safety fix: we do NOT call async functions from here, 
-but delegate to coordinator.update_mqtt_data(), which schedules an event-loop job.
+optimized for clarity and thread safety, delegating async updates to coordinator.
 """
 
 import logging
@@ -18,29 +17,20 @@ class EcoFlowMQTTHandler:
         self.hass = hass
         self.coordinator = coordinator
         self.client = None
-        self.loop = asyncio.get_event_loop()
         self.connected = False
-        self.message_count = 0  # Zähler für MQTT-Nachrichten
+        self.message_count = 0
 
         cert_info = self.coordinator.mqtt_cert_data
         self.mqtt_host = cert_info.get("url", "mqtt.ecoflow.com")
         self.mqtt_port = int(cert_info.get("port", 8883))
         self.mqtt_user = cert_info.get("certificateAccount", "open-xxxx")
         self.mqtt_pass = cert_info.get("certificatePassword", "xxxx")
-        protocol = cert_info.get("protocol", "mqtts")
-        self.use_tls = (protocol == "mqtts")
+        self.use_tls = cert_info.get("protocol", "mqtts") == "mqtts"
 
         self.sn = self.coordinator.device_sn
         self.certificate_account = self.mqtt_user
 
-        self.topics_to_subscribe = [
-            "quota",
-            # "status",
-            # "set",
-            # "set_reply",
-            # "get",
-            # "get_reply",
-        ]
+        self.topics_to_subscribe = ["quota"]
 
     def connect(self):
         """Connect to EcoFlow MQTT broker in a separate thread."""
@@ -75,17 +65,49 @@ class EcoFlowMQTTHandler:
         if rc == 0:
             self.connected = True
             _LOGGER.info("EcoFlow MQTT connected successfully.")
-            # Subscribe to topics
-            for t in self.topics_to_subscribe:
-                topic = f"/open/{self.certificate_account}/{self.sn}/{t}"
-                client.subscribe(topic)
-                _LOGGER.info("Subscribed to MQTT topic: %s", topic)
+            for topic in self.topics_to_subscribe:
+                full_topic = f"/open/{self.certificate_account}/{self.sn}/{topic}"
+                client.subscribe(full_topic)
+                _LOGGER.info("Subscribed to MQTT topic: %s", full_topic)
         else:
             _LOGGER.error(
-                "MQTT connection failed with code %s. Description: %s",
-                rc,
-                self._get_mqtt_error_description(rc),
+                "MQTT connection failed with code %s. Description: %s", rc, self._get_mqtt_error_description(rc)
             )
+
+    def on_disconnect(self, client, userdata, rc):
+        """Callback on disconnection."""
+        self.connected = False
+        if rc == 0:
+            _LOGGER.info("MQTT disconnected gracefully.")
+        else:
+            _LOGGER.warning(
+                "MQTT disconnected unexpectedly (rc: %s). Reason: %s", rc, self._get_disconnect_reason(rc)
+            )
+
+    def on_message(self, client, userdata, msg):
+        """Handle an incoming MQTT message."""
+        try:
+            payload_json = json.loads(msg.payload.decode("utf-8"))
+        except Exception as exc:
+            _LOGGER.error("Failed to decode MQTT message on %s: %s", msg.topic, exc)
+            return
+
+        _LOGGER.debug("Received MQTT message on %s: %s", msg.topic, payload_json)
+
+        if not payload_json:
+            _LOGGER.warning("Empty MQTT message received on %s", msg.topic)
+            return
+
+        data = payload_json.get("params", payload_json)
+
+        if not data:
+            _LOGGER.warning("Empty 'params' in MQTT message on %s", msg.topic)
+            return
+
+        self.message_count += 1
+        _LOGGER.info("Total MQTT messages received: %d", self.message_count)
+
+        self.coordinator.update_mqtt_data(msg.topic, data)
 
     def _get_mqtt_error_description(self, rc):
         """Map MQTT error codes to descriptions."""
@@ -98,18 +120,6 @@ class EcoFlowMQTTHandler:
         }
         return errors.get(rc, "Unknown error")
 
-    def on_disconnect(self, client, userdata, rc):
-        """Callback on disconnection."""
-        self.connected = False
-        if rc == 0:
-            _LOGGER.info("MQTT disconnected gracefully.")
-        else:
-            _LOGGER.warning(
-                "MQTT disconnected unexpectedly (rc: %s). Reason: %s",
-                rc,
-                self._get_disconnect_reason(rc),
-            )
-
     def _get_disconnect_reason(self, rc):
         """Map MQTT disconnect codes to reasons."""
         reasons = {
@@ -119,34 +129,3 @@ class EcoFlowMQTTHandler:
             3: "Client closed connection",
         }
         return reasons.get(rc, "Unknown reason")
-
-    def on_message(self, client, userdata, msg):
-        """Handle an incoming MQTT message (in a paho.mqtt thread)."""
-        try:
-            payload_str = msg.payload.decode("utf-8")
-            payload_json = json.loads(payload_str)
-        except Exception as exc:
-            _LOGGER.error("Failed to decode MQTT message on %s: %s", msg.topic, exc)
-            return
-
-        _LOGGER.debug("Received MQTT message on %s: %s", msg.topic, payload_json)
-
-        if not payload_json:
-            _LOGGER.warning("Empty MQTT message received on %s", msg.topic)
-            return
-
-        if "params" in payload_json:
-            data = payload_json["params"]
-        else:
-            data = payload_json
-
-        if not data:
-            _LOGGER.warning("Empty 'params' in MQTT message on %s", msg.topic)
-            return
-
-        self.message_count += 1
-        _LOGGER.info("Total MQTT messages received: %d", self.message_count)
-
-        # Calls a synchronous method that schedules an async update in the HA loop
-        self.coordinator.update_mqtt_data(msg.topic, data)
-
