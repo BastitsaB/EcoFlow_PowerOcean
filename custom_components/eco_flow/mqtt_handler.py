@@ -35,11 +35,11 @@ class EcoFlowMQTTHandler:
 
         self.topics_to_subscribe = [
             "quota",
-            "status",
-            "set",
-            "set_reply",
-            "get",
-            "get_reply",
+            # "status",
+            # "set",
+            # "set_reply",
+            # "get",
+            # "get_reply",
         ]
 
     def connect(self):
